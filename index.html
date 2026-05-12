@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DESIGN TAREFAS</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="auth-locked">
+    <div class="loading-screen" id="loadingScreen" aria-live="polite" aria-label="Carregando DESIGN TAREFAS">
+      <div class="loading-card">
+        <div class="loading-symbol" aria-hidden="true">
+          <img src="ICONE/icon.png" alt="" />
+        </div>
+        <div class="loading-copy">
+          <strong>DESIGN TAREFAS</strong>
+          <span>Organizando seu fluxo criativo</span>
+        </div>
+        <div class="loading-bar"><span></span></div>
+      </div>
+    </div>
+
+    <div class="window-frame" id="windowFrame">
+      <div class="window-drag">
+        <img src="ICONE/icon.png" alt="" />
+        <span>DESIGN TAREFAS</span>
+      </div>
+      <div class="window-actions">
+        <button type="button" id="windowMinimize" aria-label="Minimizar">−</button>
+        <button type="button" id="windowMaximize" aria-label="Maximizar">□</button>
+        <button type="button" id="windowClose" aria-label="Fechar">×</button>
+      </div>
+    </div>
+
+    <section class="login-screen" id="loginScreen" aria-label="Login do DESIGN TAREFAS">
+      <form class="login-card" id="loginForm">
+        <div class="login-mark">
+          <img src="ICONE/icon.png" alt="" />
+        </div>
+        <div class="login-copy">
+          <span class="eyebrow" id="authEyebrow">Primeiro acesso</span>
+          <h1 id="authTitle">Configure seu painel</h1>
+          <p id="authText">Crie o acesso inicial para começar com tudo zerado e pronto para sua rotina.</p>
+        </div>
+        <div class="setup-guide" id="setupGuide">
+          <div><strong>1</strong><span>Cadastre seu usuário administrador.</span></div>
+          <div><strong>2</strong><span>Abra o painel vazio, sem clientes ou tarefas antigas.</span></div>
+          <div><strong>3</strong><span>Crie clientes, equipe e demandas do zero.</span></div>
+        </div>
+        <div class="setup-fields" id="setupFields">
+          <label>Nome do administrador<input name="setupName" autocomplete="name" placeholder="Seu nome" /></label>
+          <label>Usuário de acesso<input name="setupUser" autocomplete="username" placeholder="Ex: admin" /></label>
+          <label>Senha<input name="setupPassword" type="password" autocomplete="new-password" placeholder="Crie uma senha" /></label>
+          <label>Confirmar senha<input name="setupConfirm" type="password" autocomplete="new-password" placeholder="Repita a senha" /></label>
+        </div>
+        <div class="login-fields" id="loginFields">
+          <label>Usuário<input name="user" autocomplete="username" /></label>
+          <label>Senha<input name="password" type="password" autocomplete="current-password" placeholder="Digite sua senha" /></label>
+          <label class="remember-login">
+            <input name="rememberLogin" type="checkbox" />
+            <span>
+              <strong>Manter conectado</strong>
+              <small>Entrar automaticamente neste dispositivo.</small>
+            </span>
+          </label>
+        </div>
+        <button class="primary-btn" type="submit" id="authSubmitBtn">Criar cadastro e abrir painel</button>
+        <p class="login-error" id="loginError" role="alert"></p>
+      </form>
+    </section>
+
+    <div class="app-shell" id="app">
+      <aside class="sidebar" id="sidebar">
+        <div class="brand">
+          <div class="brand-mark"><img src="ICONE/icon.png" alt="" /></div>
+          <div>
+            <strong>DESIGN TAREFAS</strong>
+            <span>Fluxo de criação</span>
+          </div>
+        </div>
+
+        <nav class="nav-list" aria-label="Navegação principal">
+          <button class="nav-item active" data-view="dashboard"><span>⌂</span>Painel</button>
+          <button class="nav-item" data-view="kanban"><span>▦</span>Tarefas</button>
+          <button class="nav-item" data-view="clients"><span>◉</span>Clientes</button>
+          <button class="nav-item" data-view="team"><span>◇</span>Equipe</button>
+          <button class="nav-item logout-item" id="logoutBtn" type="button"><span>↪</span>Sair</button>
+        </nav>
+
+        <div class="sidebar-card">
+          <span class="eyebrow">Produtividade</span>
+          <strong>0%</strong>
+          <p>Seu painel começa zerado e pronto para novas demandas.</p>
+          <div class="progress"><span style="width:0%"></span></div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <button class="icon-btn mobile-menu" id="menuBtn" aria-label="Abrir menu">☰</button>
+          <div class="search">
+            <span>⌕</span>
+            <input id="globalSearch" type="search" placeholder="Pesquisar cliente, demanda, arquivo..." />
+          </div>
+          <div class="top-actions">
+            <button class="primary-btn" id="newTaskBtn">+ Nova demanda</button>
+          </div>
+        </header>
+
+        <section class="view active" id="dashboard">
+          <div class="hero-panel">
+            <div>
+              <span class="eyebrow">DESIGN TAREFAS</span>
+              <h1>Operação criativa sob controle.</h1>
+              <p>Gerencie artes, aprovações, prazos, orçamento e relacionamento com clientes em uma única experiência.</p>
+            </div>
+            <div class="hero-actions">
+              <button class="primary-btn" data-open-modal="taskModal">Criar demanda</button>
+              <button class="ghost-btn" data-view-jump="kanban">Abrir tarefas</button>
+            </div>
+          </div>
+
+          <div class="metric-grid" id="metrics"></div>
+
+          <div class="dashboard-grid">
+            <section class="panel chart-panel">
+              <div class="panel-head">
+                <div>
+                  <span class="eyebrow">Performance</span>
+                  <h2>Artes entregues por semana</h2>
+                </div>
+                <button class="ghost-btn compact">Exportar</button>
+              </div>
+              <div class="bar-chart" id="weeklyChart"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <div>
+                  <span class="eyebrow">Alertas</span>
+                  <h2>Prioridades agora</h2>
+                </div>
+              </div>
+              <div class="alert-list" id="alerts"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <div>
+                  <span class="eyebrow">Calendário</span>
+                  <h2>Próximos prazos</h2>
+                </div>
+              </div>
+              <div class="calendar-list" id="calendar"></div>
+            </section>
+
+            <section class="panel chart-panel">
+              <div class="panel-head">
+                <div>
+                  <span class="eyebrow">Aprovações</span>
+                  <h2>Entregas x revisões</h2>
+                </div>
+              </div>
+              <div class="donut-wrap">
+                <div class="donut" aria-label="78 porcento aprovado"></div>
+                <div>
+                  <strong>78%</strong>
+                  <span>Aprovação na primeira rodada</span>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="kanban">
+          <div class="section-head">
+            <div>
+              <span class="eyebrow">Demandas</span>
+              <h1>Quadro operacional</h1>
+            </div>
+            <div class="filter-row">
+              <select id="clientFilter" aria-label="Filtrar por cliente"></select>
+              <select id="ownerFilter" aria-label="Filtrar por responsável"></select>
+              <select id="statusFilter" aria-label="Filtrar por status"></select>
+              <select id="priorityFilter" aria-label="Filtrar por prioridade">
+                <option value="all">Todas prioridades</option>
+                <option value="Alta">Alta</option>
+                <option value="Média">Média</option>
+                <option value="Baixa">Baixa</option>
+              </select>
+            </div>
+          </div>
+          <div class="task-command-panel">
+            <div class="task-command-card">
+              <span class="eyebrow">Saúde do quadro</span>
+              <strong id="taskHealth">0%</strong>
+              <p>Demandas dentro do prazo ou já entregues.</p>
+            </div>
+            <div class="task-command-card">
+              <span class="eyebrow">Hoje</span>
+              <strong id="taskToday">0</strong>
+              <p>Entregas e revisões que precisam de atenção.</p>
+            </div>
+            <div class="task-command-card wide">
+              <span class="eyebrow">Fila crítica</span>
+              <div class="critical-list" id="criticalTasks"></div>
+            </div>
+          </div>
+          <div class="kanban-board" id="kanbanBoard"></div>
+        </section>
+
+        <section class="view" id="clients">
+          <div class="section-head">
+            <div>
+              <span class="eyebrow">CRM</span>
+              <h1>Clientes ativos</h1>
+            </div>
+            <button class="primary-btn" data-open-modal="clientModal">+ Novo cliente</button>
+          </div>
+          <div class="client-grid" id="clientGrid"></div>
+        </section>
+
+        <section class="view" id="team">
+          <div class="section-head">
+            <div>
+              <span class="eyebrow">Permissões</span>
+              <h1>Equipe de design</h1>
+            </div>
+            <button class="primary-btn" data-open-modal="teamModal">+ Novo designer</button>
+          </div>
+          <div class="team-grid" id="teamGrid"></div>
+        </section>
+
+      </main>
+    </div>
+
+    <div class="toast-stack" id="toastStack"></div>
+    <datalist id="teamOwnerList"></datalist>
+
+    <dialog class="modal" id="taskModal">
+      <form method="dialog" class="modal-card" id="taskForm">
+        <div class="panel-head">
+          <div>
+            <span class="eyebrow" id="taskModalEyebrow">Nova demanda</span>
+            <h2 id="taskModalTitle">Criar tarefa</h2>
+          </div>
+          <button class="icon-btn" type="button" data-close-modal="taskModal" aria-label="Fechar">×</button>
+        </div>
+        <div class="task-form-intro">
+          <div>
+            <strong>Briefing rápido</strong>
+            <span>Preencha o essencial para a equipe produzir, acompanhar e finalizar a demanda.</span>
+          </div>
+        </div>
+        <div class="form-section">
+          <h3>Identificação</h3>
+          <div class="form-grid">
+            <label class="wide-field">Nome da demanda<input name="title" required placeholder="Ex: Carrossel lançamento coleção verão" /></label>
+            <label>Cliente<select name="client" id="taskClientSelect"></select></label>
+            <label>Prioridade<select name="priority"><option>Alta</option><option>Média</option><option>Baixa</option></select></label>
+          </div>
+        </div>
+        <div class="form-section">
+          <h3>Produção</h3>
+          <div class="form-grid">
+            <label>Responsável<input name="owner" list="teamOwnerList" placeholder="Designer responsável" /></label>
+            <label>Entrega<input name="due" type="date" required /></label>
+            <label>Valor estimado<input name="budget" type="number" min="0" step="0.01" placeholder="0,00" /></label>
+          </div>
+        </div>
+        <div class="form-section">
+          <h3>Briefing</h3>
+          <div class="form-grid">
+            <label class="full">Objetivo da arte<textarea name="description" placeholder="O que precisa ser comunicado? Qual chamada, oferta, data, local ou informação principal?"></textarea></label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="ghost-btn" type="button" data-close-modal="taskModal">Cancelar</button>
+          <button class="primary-btn" id="taskSubmitBtn">Salvar demanda</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="modal" id="clientModal">
+      <form method="dialog" class="modal-card" id="clientForm">
+        <div class="panel-head">
+          <div>
+            <span class="eyebrow" id="clientModalEyebrow">Novo cliente</span>
+            <h2 id="clientModalTitle">Cadastro do contato</h2>
+          </div>
+          <button class="icon-btn" type="button" data-close-modal="clientModal" aria-label="Fechar">×</button>
+        </div>
+        <div class="form-grid">
+          <label class="full">Nome<input name="name" required placeholder="Nome do cliente" /></label>
+        </div>
+        <button class="primary-btn" id="clientSubmitBtn">Criar cliente</button>
+      </form>
+    </dialog>
+
+    <dialog class="modal" id="teamModal">
+      <form method="dialog" class="modal-card" id="teamForm">
+        <div class="panel-head">
+          <div>
+            <span class="eyebrow" id="teamModalEyebrow">Novo designer</span>
+            <h2>Adicionar à equipe</h2>
+          </div>
+          <button class="icon-btn" type="button" data-close-modal="teamModal" aria-label="Fechar">×</button>
+        </div>
+        <div class="form-section">
+          <h3>Dados do profissional</h3>
+          <div class="form-grid">
+            <label class="wide-field">Nome<input name="name" required placeholder="Nome do designer" /></label>
+            <label>Cargo<select name="role"><option>Designer</option><option>Diretor de arte</option><option>Motion designer</option><option>Social media</option><option>Atendimento</option></select></label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="ghost-btn" type="button" data-close-modal="teamModal">Cancelar</button>
+          <button class="primary-btn" id="teamSubmitBtn">Adicionar designer</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="modal" id="taskDetailModal">
+      <div class="modal-card" id="taskDetailContent"></div>
+    </dialog>
+
+    <script src="app.js"></script>
+  </body>
+</html>

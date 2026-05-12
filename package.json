@@ -1,0 +1,59 @@
+{
+  "name": "design-tarefas",
+  "version": "1.2.2",
+  "private": true,
+  "main": "electron-main.js",
+  "productName": "DESIGN TAREFAS",
+  "description": "Programa para gestao de tarefas, demandas, artes, aprovacoes e orcamentos de design.",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "web": "node server.js",
+    "build:win": "electron-builder --win nsis"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.18.3",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
+    "pg": "^8.11.5",
+    "sql.js": "^1.14.1"
+  },
+  "devDependencies": {
+    "electron": "^30.5.1",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "br.com.designtarefas.app",
+    "productName": "DESIGN TAREFAS",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "index.html",
+      "styles.css",
+      "app.js",
+      "electron-main.js",
+      "preload.js",
+      ".env.example",
+      "node_modules/**",
+      "node_modules/sql.js/dist/**",
+      "build/icon.ico",
+      "ICONE/icon.png",
+      "package.json",
+      "!node_modules/electron/**",
+      "!node_modules/electron-builder/**"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "include": "installer.nsh"
+    }
+  }
+}
