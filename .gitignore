@@ -1,5 +1,6 @@
 .env
 github-token.txt
+github-token.txt.txt
 .github-token
 node_modules/
 dist/
