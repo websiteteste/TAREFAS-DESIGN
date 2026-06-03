@@ -7,36 +7,116 @@ const bcrypt = require("bcryptjs");
 const multer = require("multer");
 const path = require("path");
 const crypto = require("crypto");
+const { Pool } = require("pg");
 
 const app = express();
 const upload = multer({ dest: path.join(__dirname, "uploads") });
 const PORT = process.env.PORT || 3333;
 const JWT_SECRET = process.env.JWT_SECRET || "change-this-secret";
+const DATABASE_URL = process.env.DATABASE_URL || process.env.DESIGN_TAREFAS_DATABASE_URL || "";
+const pool = DATABASE_URL
+  ? new Pool({
+      connectionString: DATABASE_URL,
+      ssl: { rejectUnauthorized: false }
+    })
+  : null;
 
 app.use(cors());
 app.use(express.json());
 app.use(express.static(__dirname));
 
-const users = [
-  {
-    id: "admin",
-    name: "DESIGN TAREFAS",
-    phone: "5527999990000",
-    role: "ADM",
-    passwordHash: bcrypt.hashSync("admin123", 10)
-  },
-  {
-    id: "cliente-aurora",
-    name: "Aurora Eventos",
-    phone: "5527999990000",
-    role: "Cliente",
-    passwordHash: bcrypt.hashSync("gbdesign2026", 10)
-  }
-];
-
 let demands = [];
 let notifications = [];
 let budgets = [];
+
+async function readStoredUsers() {
+  if (!pool) {
+    const error = new Error("Banco de dados nao configurado.");
+    error.statusCode = 503;
+    throw error;
+  }
+
+  const result = await pool.query(
+    `
+      SELECT payload
+      FROM public.app_state
+      WHERE id = $1
+      LIMIT 1
+    `,
+    ["main"]
+  );
+
+  if (Array.isArray(result.rows[0]?.payload?.users)) {
+    return result.rows[0].payload.users;
+  }
+
+  const authResult = await pool.query(
+    `
+      SELECT payload
+      FROM public.users
+      WHERE id = $1
+      LIMIT 1
+    `,
+    ["auth"]
+  );
+
+  return Array.isArray(authResult.rows[0]?.payload?.users) ? authResult.rows[0].payload.users : [];
+}
+
+function normalizeLogin(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function normalizePhone(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function findStoredUser(users, login) {
+  const normalizedLogin = normalizeLogin(login);
+  const normalizedPhone = normalizePhone(login);
+
+  return users.find((user) => {
+    if (!user || user.active === false) return false;
+    const userName = normalizeLogin(user.user || user.username || user.login);
+    const phone = normalizePhone(user.phone || user.celular || user.telefone);
+    return (userName && userName === normalizedLogin) || (phone && phone === normalizedPhone);
+  });
+}
+
+async function verifyPassword(password, storedHash) {
+  const value = String(storedHash || "");
+  if (value.startsWith("$2a$") || value.startsWith("$2b$") || value.startsWith("$2y$")) {
+    return bcrypt.compare(password, value);
+  }
+
+  if (value.startsWith("sha256$")) {
+    const [, salt, expectedDigest] = value.split("$");
+    if (!salt || !expectedDigest) return false;
+    const digest = await sha256(`${salt}:${password}`);
+    return timingSafeEqual(digest, expectedDigest);
+  }
+
+  return false;
+}
+
+async function sha256(value) {
+  return crypto.createHash("sha256").update(String(value)).digest("hex");
+}
+
+function timingSafeEqual(left, right) {
+  const leftBuffer = Buffer.from(String(left));
+  const rightBuffer = Buffer.from(String(right));
+  if (leftBuffer.length !== rightBuffer.length) return false;
+  return crypto.timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function publicUser(user) {
+  return {
+    id: user.id,
+    name: user.name,
+    role: user.role || "Funcionario"
+  };
+}
 
 function auth(requiredRoles = []) {
   return (req, res, next) => {
@@ -57,15 +137,24 @@ function auth(requiredRoles = []) {
 }
 
 app.post("/api/auth/login", async (req, res) => {
-  const { phone, password } = req.body;
-  const user = users.find((item) => item.phone === String(phone).replace(/\D/g, ""));
+  const { phone, user, username, login, password } = req.body;
+  const loginValue = phone || user || username || login;
 
-  if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
-    return res.status(401).json({ error: "Celular ou senha incorretos" });
+  try {
+    const storedUsers = await readStoredUsers();
+    const account = findStoredUser(storedUsers, loginValue);
+
+    if (!account || !(await verifyPassword(password, account.passwordHash))) {
+      return res.status(401).json({ error: "Usuario ou senha incorretos" });
+    }
+
+    const safeUser = publicUser(account);
+    const token = jwt.sign(safeUser, JWT_SECRET, { expiresIn: "8h" });
+    res.json({ token, user: safeUser });
+  } catch (error) {
+    console.error("Falha no login da API:", error);
+    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Falha ao autenticar usuario" });
   }
-
-  const token = jwt.sign({ id: user.id, name: user.name, role: user.role }, JWT_SECRET, { expiresIn: "8h" });
-  res.json({ token, user: { id: user.id, name: user.name, role: user.role } });
 });
 
 app.get("/api/demands", auth(["ADM", "Designer", "Atendimento", "Cliente"]), (req, res) => {
