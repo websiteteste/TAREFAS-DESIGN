@@ -1,20 +1,29 @@
 {
   "name": "design-tarefas",
-  "version": "1.2.2",
+  "version": "1.2.13",
   "private": true,
   "main": "electron-main.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/websiteteste/TAREFAS-DESIGN.git"
+  },
   "productName": "DESIGN TAREFAS",
   "description": "Programa para gestao de tarefas, demandas, artes, aprovacoes e orcamentos de design.",
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
     "web": "node server.js",
-    "build:win": "electron-builder --win nsis"
+    "build": "npm run build:win",
+    "build:win": "electron-builder --win nsis --config.win.signAndEditExecutable=false",
+    "publish": "npm run publish:win",
+    "publish:win": "electron-builder --win nsis --publish always --config.win.signAndEditExecutable=false",
+    "publish:win:draft": "electron-builder --win nsis --publish onTagOrDraft --config.win.signAndEditExecutable=false"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
+    "electron-updater": "^6.8.3",
     "express": "^4.18.3",
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.1",
@@ -22,15 +31,18 @@
     "sql.js": "^1.14.1"
   },
   "devDependencies": {
-    "electron": "^30.5.1",
-    "electron-builder": "^24.13.3"
+    "electron": "^42.3.0",
+    "electron-builder": "^26.8.1"
   },
   "build": {
     "appId": "br.com.designtarefas.app",
     "productName": "DESIGN TAREFAS",
+    "asar": true,
+    "compression": "maximum",
     "directories": {
       "output": "dist"
     },
+    "artifactName": "DESIGN-TAREFAS-Setup-${version}.${ext}",
     "files": [
       "index.html",
       "styles.css",
@@ -46,6 +58,16 @@
       "!node_modules/electron/**",
       "!node_modules/electron-builder/**"
     ],
+    "extraResources": [
+      {
+        "from": ".env",
+        "to": ".env"
+      },
+      {
+        "from": "build/icon.ico",
+        "to": "icon.ico"
+      }
+    ],
     "win": {
       "target": "nsis",
       "icon": "build/icon.ico"
@@ -53,7 +75,20 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
+      "shortcutName": "DESIGN TAREFAS",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
       "include": "installer.nsh"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "websiteteste",
+        "repo": "TAREFAS-DESIGN",
+        "releaseType": "release"
+      }
+    ]
   }
 }
