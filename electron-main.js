@@ -4,6 +4,8 @@ const path = require("path");
 const dotenv = require("dotenv");
 const initSqlJs = require("sql.js");
 const { Pool } = require("pg");
+const { autoUpdater } = require("electron-updater");
+const appMetadata = require("./package.json");
 
 app.setName("DESIGN TAREFAS");
 app.setAppUserModelId("br.com.designtarefas.app");
@@ -16,7 +18,13 @@ let sqlModulePromise = null;
 let sqliteDatabasePromise = null;
 let supabasePool = null;
 let supabaseSchemaPromise = null;
+let databaseWriteQueue = Promise.resolve();
 let environmentLoaded = false;
+let updateCheckStarted = false;
+let closeInProgress = false;
+
+const shutdownWriteTimeoutMs = 1500;
+const shutdownPoolTimeoutMs = 700;
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
@@ -30,12 +38,19 @@ function loadEnvironment() {
   const environmentPaths = [
     path.join(process.cwd(), ".env"),
     path.join(__dirname, ".env"),
+    process.resourcesPath ? path.join(process.resourcesPath, ".env") : null,
+    process.resourcesPath ? path.join(process.resourcesPath, "app.env") : null,
+    process.execPath ? path.join(path.dirname(process.execPath), ".env") : null,
     app.isReady() ? path.join(app.getPath("userData"), ".env") : null
   ].filter(Boolean);
 
   environmentPaths.forEach((environmentPath) => {
     dotenv.config({ path: environmentPath, override: false });
   });
+
+  if (!process.env.DATABASE_URL && process.env.DESIGN_TAREFAS_DATABASE_URL) {
+    process.env.DATABASE_URL = process.env.DESIGN_TAREFAS_DATABASE_URL;
+  }
 }
 
 function getSupabasePool() {
@@ -138,6 +153,16 @@ function rowPayload(row) {
   return normalizeRemotePayload(row.payload);
 }
 
+function latestRemoteTimestamp(...results) {
+  const timestamps = results
+    .flatMap((result) => result.rows || [])
+    .map((row) => new Date(row.updated_at).getTime())
+    .filter((value) => Number.isFinite(value));
+
+  if (!timestamps.length) return new Date().toISOString();
+  return new Date(Math.max(...timestamps)).toISOString();
+}
+
 function teamMemberId(member, index) {
   if (member?.id) return String(member.id);
   const base = String(member?.name || `member-${index + 1}`)
@@ -163,13 +188,14 @@ async function readSupabaseDatabase() {
   if (!pool) return null;
 
   await ensureSupabaseSchema();
-  const [usersResult, clientsResult, teamResult, tasksResult, budgetsResult, notificationsResult] = await Promise.all([
+  const [usersResult, clientsResult, teamResult, tasksResult, budgetsResult, notificationsResult, appStateResult] = await Promise.all([
     pool.query("SELECT * FROM public.users ORDER BY updated_at ASC"),
     pool.query("SELECT * FROM public.clients ORDER BY updated_at ASC"),
     pool.query("SELECT * FROM public.team ORDER BY updated_at ASC"),
     pool.query("SELECT * FROM public.tasks ORDER BY updated_at DESC"),
     pool.query("SELECT * FROM public.budgets ORDER BY updated_at DESC"),
-    pool.query("SELECT * FROM public.notifications ORDER BY updated_at DESC")
+    pool.query("SELECT * FROM public.notifications ORDER BY updated_at DESC"),
+    pool.query("SELECT * FROM public.app_state WHERE id = $1 LIMIT 1", ["main"])
   ]);
 
   const authRow = usersResult.rows.find((row) => row.id === "auth");
@@ -182,17 +208,28 @@ async function readSupabaseDatabase() {
     notificationsResult.rowCount;
 
   if (!authRow && stateRowsCount === 0) {
-    const legacyResult = await pool.query("SELECT payload FROM public.app_state WHERE id = $1 LIMIT 1", ["main"]);
-    return legacyResult.rows[0]?.payload || null;
+    return appStateResult.rows[0]?.payload || null;
   }
 
   const authPayload = rowPayload(authRow);
+  const appStatePayload = appStateResult.rows[0]?.payload || {};
+  const savedAt = latestRemoteTimestamp(
+    usersResult,
+    clientsResult,
+    teamResult,
+    tasksResult,
+    budgetsResult,
+    notificationsResult,
+    appStateResult
+  );
 
   return {
     version: 2,
-    savedAt: new Date().toISOString(),
+    savedAt,
     setupComplete: Boolean(authPayload.setupComplete),
     authUser: authPayload.authUser || null,
+    users: Array.isArray(appStatePayload.users) ? appStatePayload.users : authPayload.users || [],
+    activityLogs: Array.isArray(appStatePayload.activityLogs) ? appStatePayload.activityLogs : authPayload.activityLogs || [],
     rememberSession: Boolean(authPayload.rememberSession),
     rememberedLogin: authPayload.rememberedLogin || { enabled: false, user: "", password: "" },
     clients: clientsResult.rows.map(rowPayload),
@@ -210,8 +247,8 @@ async function writeSupabaseDatabase(data) {
   await ensureSupabaseSchema();
   const payload = {
     version: 2,
-    savedAt: new Date().toISOString(),
-    ...data
+    ...data,
+    savedAt: new Date().toISOString()
   };
 
   const clients = Array.isArray(data.clients) ? data.clients : [];
@@ -243,6 +280,8 @@ async function writeSupabaseDatabase(data) {
         {
           setupComplete: Boolean(data.setupComplete),
           authUser: data.authUser || null,
+          users: Array.isArray(data.users) ? data.users : [],
+          activityLogs: Array.isArray(data.activityLogs) ? data.activityLogs : [],
           rememberSession: Boolean(data.rememberSession),
           rememberedLogin: data.rememberedLogin || { enabled: false, user: "", password: "" }
         }
@@ -339,9 +378,6 @@ async function writeSupabaseDatabase(data) {
 }
 
 async function replaceRemoteRows(client, tableName, rows, getId, mapColumns) {
-  const ids = rows.map((row, index) => String(getId(row, index))).filter(Boolean);
-  await client.query(`DELETE FROM public.${tableName} WHERE NOT (id = ANY($1::text[]))`, [ids]);
-
   for (const [index, row] of rows.entries()) {
     const id = String(getId(row, index));
     if (!id) continue;
@@ -457,13 +493,25 @@ async function migrateLegacyDatabase(database) {
 }
 
 async function readDatabase() {
+  let remoteData = null;
+  let localData = null;
+
   try {
-    const remoteData = await readSupabaseDatabase();
-    if (remoteData) return remoteData;
+    remoteData = await readSupabaseDatabase();
   } catch (error) {
     console.error("Falha ao ler o banco Supabase:", error);
   }
 
+  localData = await readLocalDatabase();
+
+  if (remoteData && localData) {
+    return stateTimestamp(remoteData) >= stateTimestamp(localData) ? remoteData : localData;
+  }
+
+  return remoteData || localData;
+}
+
+async function readLocalDatabase() {
   try {
     const database = await getSqliteDatabase();
     const result = database.exec("SELECT payload FROM app_state WHERE id = 'main' LIMIT 1");
@@ -479,12 +527,42 @@ async function readDatabase() {
   }
 }
 
+function stateTimestamp(data) {
+  const timestamp = Date.parse(data?.savedAt || data?.updated_at || "");
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+async function readRemoteDatabase() {
+  try {
+    return await readSupabaseDatabase();
+  } catch (error) {
+    console.error("Falha ao ler o banco remoto:", error);
+    return null;
+  }
+}
+
+async function databaseStatus() {
+  const pool = getSupabasePool();
+  if (!pool) {
+    return { remoteConfigured: false, remoteOnline: false };
+  }
+
+  try {
+    await ensureSupabaseSchema();
+    await pool.query("SELECT 1");
+    return { remoteConfigured: true, remoteOnline: true };
+  } catch (error) {
+    console.error("Falha ao testar o banco remoto:", error);
+    return { remoteConfigured: true, remoteOnline: false, message: error?.message || "Banco remoto indisponivel." };
+  }
+}
+
 async function writeDatabase(data) {
   const database = await getSqliteDatabase();
   const payload = {
     version: 1,
-    savedAt: new Date().toISOString(),
-    ...data
+    ...data,
+    savedAt: new Date().toISOString()
   };
   const updatedAt = new Date().toISOString();
 
@@ -508,6 +586,64 @@ async function writeDatabase(data) {
   }
 
   return payload;
+}
+
+function waitWithTimeout(promise, timeoutMs) {
+  let timeoutId = null;
+  const timeout = new Promise((resolve) => {
+    timeoutId = setTimeout(() => resolve("timeout"), timeoutMs);
+    if (typeof timeoutId.unref === "function") timeoutId.unref();
+  });
+
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutId));
+}
+
+function queueWriteDatabase(data) {
+  databaseWriteQueue = databaseWriteQueue
+    .catch(() => null)
+    .then(() => writeDatabase(data));
+  return databaseWriteQueue;
+}
+
+async function flushDatabaseWrites(timeoutMs = shutdownWriteTimeoutMs) {
+  try {
+    await waitWithTimeout(databaseWriteQueue, timeoutMs);
+  } catch (error) {
+    console.error("Falha ao aguardar salvamento pendente:", error);
+  }
+}
+
+async function closeSupabasePool(timeoutMs = shutdownPoolTimeoutMs) {
+  if (!supabasePool) return;
+
+  const pool = supabasePool;
+  supabasePool = null;
+  supabaseSchemaPromise = null;
+
+  try {
+    await waitWithTimeout(pool.end(), timeoutMs);
+  } catch (error) {
+    console.error("Falha ao encerrar conexao remota:", error);
+  }
+}
+
+async function closeAppGracefully() {
+  if (closeInProgress) return;
+  closeInProgress = true;
+  isQuitting = true;
+
+  await flushDatabaseWrites();
+  await closeSupabasePool();
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.destroy();
+  }
+
+  app.quit();
+
+  setTimeout(() => {
+    if (!app.isQuitting) app.exit(0);
+  }, 800).unref?.();
 }
 
 async function persistSqliteDatabase(database) {
@@ -551,9 +687,11 @@ function createWindow() {
     title: "DESIGN TAREFAS",
     icon: path.join(__dirname, "build", "icon.ico"),
     frame: false,
+    thickFrame: false,
     titleBarStyle: "hidden",
     show: false,
-    backgroundColor: "#101522",
+    backgroundColor: "#070910",
+    backgroundMaterial: "none",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -562,7 +700,19 @@ function createWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, "index.html"));
-  mainWindow.once("ready-to-show", () => mainWindow.show());
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    if (url !== mainWindow.webContents.getURL()) event.preventDefault();
+  });
+  mainWindow.once("ready-to-show", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.show();
+  });
+  mainWindow.on("close", (event) => {
+    if (isQuitting) return;
+    event.preventDefault();
+    closeAppGracefully();
+  });
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
@@ -589,6 +739,59 @@ function showWindowsNotification({ title, body }) {
   notification.show();
 }
 
+function sendUpdateStatus(payload) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send("updates:status", payload);
+}
+
+function setupAutoUpdater() {
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = false;
+  autoUpdater.allowDowngrade = false;
+  autoUpdater.allowPrerelease = false;
+
+  autoUpdater.on("checking-for-update", () => {
+    sendUpdateStatus({ type: "checking" });
+  });
+
+  autoUpdater.on("update-available", (info) => {
+    sendUpdateStatus({ type: "available", version: info.version });
+  });
+
+  autoUpdater.on("update-not-available", () => {
+    updateCheckStarted = false;
+    sendUpdateStatus({ type: "not-available" });
+  });
+
+  autoUpdater.on("download-progress", (progress) => {
+    sendUpdateStatus({ type: "downloading", percent: Math.round(progress.percent || 0) });
+  });
+
+  autoUpdater.on("update-downloaded", (info) => {
+    updateCheckStarted = false;
+    sendUpdateStatus({ type: "downloaded", version: info.version });
+  });
+
+  autoUpdater.on("error", (error) => {
+    updateCheckStarted = false;
+    sendUpdateStatus({ type: "error", message: error?.message || "Falha ao verificar atualizacao." });
+  });
+}
+
+function checkForUpdates() {
+  if (!app.isPackaged) {
+    sendUpdateStatus({ type: "disabled-dev" });
+    return false;
+  }
+
+  if (updateCheckStarted) return true;
+  updateCheckStarted = true;
+  autoUpdater.checkForUpdates().catch((error) => {
+    sendUpdateStatus({ type: "error", message: error?.message || "Falha ao verificar atualizacao." });
+  });
+  return true;
+}
+
 if (hasSingleInstanceLock) {
   app.on("second-instance", () => {
     if (!mainWindow) {
@@ -605,10 +808,18 @@ if (hasSingleInstanceLock) {
 if (hasSingleInstanceLock) {
   app.whenReady().then(() => {
     Menu.setApplicationMenu(null);
+    setupAutoUpdater();
 
     ipcMain.handle("database:load", readDatabase);
-    ipcMain.handle("database:save", (_event, data) => writeDatabase(data));
+    ipcMain.handle("database:load-remote", readRemoteDatabase);
+    ipcMain.handle("database:save", (_event, data) => queueWriteDatabase(data));
     ipcMain.handle("database:path", () => databasePath());
+    ipcMain.handle("database:status", databaseStatus);
+    ipcMain.handle("app:info", () => ({
+      name: appMetadata.productName || app.getName(),
+      version: app.getVersion(),
+      description: appMetadata.description || ""
+    }));
     ipcMain.handle("window:minimize", () => mainWindow?.minimize());
     ipcMain.handle("window:maximize", () => {
       if (!mainWindow) return false;
@@ -619,18 +830,21 @@ if (hasSingleInstanceLock) {
       mainWindow.maximize();
       return true;
     });
-    ipcMain.handle("window:close", () => {
-      isQuitting = true;
-      mainWindow?.close();
-      app.quit();
-    });
-    ipcMain.handle("app:quit", () => {
-      isQuitting = true;
-      app.quit();
-    });
+    ipcMain.handle("window:close", closeAppGracefully);
+    ipcMain.handle("app:quit", closeAppGracefully);
     ipcMain.handle("notifications:show", (_event, payload) => showWindowsNotification(payload || {}));
+    ipcMain.handle("updates:check", () => checkForUpdates());
+    ipcMain.handle("updates:install", async () => {
+      isQuitting = true;
+      await flushDatabaseWrites();
+      await closeSupabasePool();
+      autoUpdater.quitAndInstall(false, true);
+    });
 
     createWindow();
+    mainWindow.webContents.once("did-finish-load", () => {
+      setTimeout(checkForUpdates, 5000);
+    });
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
